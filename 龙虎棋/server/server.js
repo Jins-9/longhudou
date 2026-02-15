@@ -69,6 +69,7 @@ const server = http.createServer((req, res) => {
         };
         
         rooms.set(roomId, room);
+        console.log(`[Create Room] Room: ${roomId}, Host: ${playerId}, Role: ${playerRole}`);
         
         res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -78,6 +79,7 @@ const server = http.createServer((req, res) => {
           playerRole,
         }));
       } catch (e) {
+        console.error('[Create Room] Error:', e);
         res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
       }
@@ -98,6 +100,7 @@ const server = http.createServer((req, res) => {
         const room = rooms.get(roomId);
         
         if (!room) {
+          console.log(`[Join Room] Room not found: ${roomId}, Player: ${playerId}`);
           res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Room not found' }));
           return;
@@ -105,6 +108,7 @@ const server = http.createServer((req, res) => {
         
         // 如果已经是房主
         if (room.hostId === playerId) {
+          console.log(`[Join Room] Host rejoined: ${roomId}, Player: ${playerId}`);
           res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
@@ -118,6 +122,7 @@ const server = http.createServer((req, res) => {
         
         // 如果已经是客人
         if (room.guestId === playerId) {
+          console.log(`[Join Room] Guest rejoined: ${roomId}, Player: ${playerId}`);
           res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
@@ -131,6 +136,7 @@ const server = http.createServer((req, res) => {
         
         // 新玩家加入
         if (room.guestId) {
+          console.log(`[Join Room] Room full: ${roomId}, Player: ${playerId}`);
           res.writeHead(403, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Room is full' }));
           return;
@@ -139,6 +145,7 @@ const server = http.createServer((req, res) => {
         const guestRole = room.hostRole === 'dragon' ? 'tiger' : 'dragon';
         room.guestId = playerId;
         room.guestRole = guestRole;
+        console.log(`[Join Room] New guest: ${roomId}, Guest: ${playerId}, Role: ${guestRole}`);
         
         res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -149,6 +156,7 @@ const server = http.createServer((req, res) => {
           opponentConnected: true,
         }));
       } catch (e) {
+        console.error('[Join Room] Error:', e);
         res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
       }
@@ -164,6 +172,7 @@ const server = http.createServer((req, res) => {
     const room = rooms.get(roomId);
     
     if (!room) {
+      console.log(`[Room Status] Room not found: ${roomId}, Player: ${playerId}`);
       res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: 'Room not found' }));
       return;
@@ -227,10 +236,21 @@ const server = http.createServer((req, res) => {
         
         if (room) {
           if (room.hostId === playerId) {
-            rooms.delete(roomId);
+            // 房主离开：标记为已离开，但不立即删除房间
+            room.hostId = null;
+            room.hostRole = null;
+            // 如果客人也已经离开，则删除房间
+            if (!room.guestId) {
+              rooms.delete(roomId);
+            }
           } else if (room.guestId === playerId) {
+            // 客人离开：标记为已离开
             room.guestId = null;
             room.guestRole = null;
+            // 如果房主也已经离开，则删除房间
+            if (!room.hostId) {
+              rooms.delete(roomId);
+            }
           }
         }
         
@@ -340,6 +360,23 @@ server.on('upgrade', (request, socket, head) => {
     
     if (opponentSocket) {
       sendWebSocketMessage(opponentSocket, { type: 'opponent-disconnected' });
+    }
+    
+    // 清理房间中的玩家
+    if (room) {
+      if (isHost) {
+        room.hostId = null;
+        room.hostRole = null;
+        if (!room.guestId) {
+          rooms.delete(roomId);
+        }
+      } else {
+        room.guestId = null;
+        room.guestRole = null;
+        if (!room.hostId) {
+          rooms.delete(roomId);
+        }
+      }
     }
   });
 });
