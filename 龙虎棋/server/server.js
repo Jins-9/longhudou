@@ -301,26 +301,26 @@ server.on('upgrade', (request, socket, head) => {
   // 处理消息
   socket.on('data', (data) => {
     try {
-      const message = parseWebSocketFrame(data);
-      if (message) {
-        const msg = JSON.parse(message);
+      const message = parseWebSocketFrame(data, socket);
+      if (!message) return;
+      
+      const msg = JSON.parse(message);
+      
+      // 广播游戏状态更新
+      if (msg.type === 'game-update') {
+        room.gameState = msg.gameState;
         
-        // 广播游戏状态更新
-        if (msg.type === 'game-update') {
-          room.gameState = msg.gameState;
-          
-          // 通知对方
-          const opponentKey = isHost 
-            ? `${roomId}:${room.guestId}` 
-            : `${roomId}:${room.hostId}`;
-          const opponentSocket = clients.get(opponentKey);
-          
-          if (opponentSocket) {
-            sendWebSocketMessage(opponentSocket, {
-              type: 'game-update',
-              gameState: msg.gameState,
-            });
-          }
+        // 通知对方
+        const opponentKey = isHost 
+          ? `${roomId}:${room.guestId}` 
+          : `${roomId}:${room.hostId}`;
+        const opponentSocket = clients.get(opponentKey);
+        
+        if (opponentSocket) {
+          sendWebSocketMessage(opponentSocket, {
+            type: 'game-update',
+            gameState: msg.gameState,
+          });
         }
       }
     } catch (e) {
@@ -345,13 +345,41 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // 解析WebSocket帧
-function parseWebSocketFrame(buffer) {
+function parseWebSocketFrame(buffer, socket) {
   if (buffer.length < 2) return null;
   
   const fin = (buffer[0] & 0x80) === 0x80;
   const opcode = buffer[0] & 0x0f;
   const masked = (buffer[1] & 0x80) === 0x80;
   let payloadLength = buffer[1] & 0x7f;
+  
+  // 处理控制帧
+  // 0x08: Close frame
+  if (opcode === 0x08) {
+    // 发送关闭帧响应
+    if (socket && !socket.destroyed) {
+      socket.write(Buffer.from([0x88, 0x00]));
+    }
+    return null;
+  }
+  
+  // 0x09: Ping frame - 回复 Pong
+  if (opcode === 0x09) {
+    if (socket && !socket.destroyed) {
+      socket.write(Buffer.from([0x8A, 0x00]));
+    }
+    return null;
+  }
+  
+  // 0x0A: Pong frame - 忽略
+  if (opcode === 0x0A) {
+    return null;
+  }
+  
+  // 只处理文本帧 (0x01) 和二进制帧 (0x02)
+  if (opcode !== 0x01 && opcode !== 0x02) {
+    return null;
+  }
   
   let offset = 2;
   
