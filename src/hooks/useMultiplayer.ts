@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { GameState } from '@/types/game';
 
 // Railway 后端服务器地址
-const SERVER_URL = 'http://localhost:5000';
+const SERVER_URL = 'https://longhudou-production.up.railway.app';
 
 // 生成玩家ID
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -181,7 +181,7 @@ export const useMultiplayer = () => {
     }
     
     // 使用 wss 协议连接 Railway
-    const wsUrl = `wss://http://localhost:5000?room=${roomId}&playerId=${playerId.current}`;
+    const wsUrl = `wss://longhudou-production.up.railway.app?room=${roomId}&playerId=${playerId.current}`;
     
     try {
       const ws = new WebSocket(wsUrl);
