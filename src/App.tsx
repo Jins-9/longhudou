@@ -3,7 +3,7 @@ import { MainMenu, GameScreen } from '@/components/game';
 import { useMultiplayer } from '@/hooks/useMultiplayer';
 import { initializeBoard } from '@/hooks/useGame';
 import type { GameMode, GameState, GamePhase, Side } from '@/types/game';
-import './App.css';
+// import './App.css';
 
 // 创建初始游戏状态
 const createInitialGameState = (): GameState => ({
@@ -30,6 +30,9 @@ const isValidGameState = (state: any): state is GameState => {
   if (typeof state.dragonPiecesCount !== 'number') return false;
   if (typeof state.tigerPiecesCount !== 'number') return false;
   
+  // 验证 winner 字段（可以是 null 或 'dragon' 或 'tiger'）
+  if (state.winner !== null && state.winner !== 'dragon' && state.winner !== 'tiger') return false;
+  
   // 验证棋盘每个格子
   for (let row = 0; row < 4; row++) {
     if (!Array.isArray(state.board[row]) || state.board[row].length !== 4) {
@@ -49,6 +52,10 @@ function App() {
   // 游戏状态（本地或在线共享）
   const [gameState, setGameState] = useState<GameState>(createInitialGameState());
   
+  // 状态版本控制（防止竞态条件）
+  const [stateVersion, setStateVersion] = useState(0);
+  const lastLocalUpdateRef = useRef<number>(0);
+  
   const {
     roomId,
     playerRole: mpPlayerRole,
@@ -58,6 +65,7 @@ function App() {
     leaveRoom,
     broadcastGameState,
     syncGameState,
+    serverGameState,
   } = useMultiplayer();
 
   // 游戏是否已开始（防止重复初始化）
@@ -90,6 +98,37 @@ function App() {
 
   // ========== 在线模式状态同步 ==========
   
+  // ========== 监听 WebSocket 接收到的服务器状态 ==========
+  useEffect(() => {
+    if (gameMode !== 'online' || !serverGameState || !showGame) return;
+    
+    // 验证服务器状态
+    if (!isValidGameState(serverGameState)) {
+      console.warn('Invalid server state from WebSocket');
+      return;
+    }
+    
+    // 只有当服务器状态与本地不同时才更新
+    const localJson = JSON.stringify(gameState.board);
+    const serverJson = JSON.stringify(serverGameState.board);
+    
+    // 检查服务器状态是否更新（通过 currentTurn 判断）
+    const serverIsNewer = serverGameState.currentTurn !== gameState.currentTurn;
+    
+    // 如果本地刚刚更新过（100ms内），跳过这次更新（防止竞态条件）
+    const timeSinceLastUpdate = Date.now() - lastLocalUpdateRef.current;
+    if (timeSinceLastUpdate < 200 && serverIsNewer) {
+      console.log('Skipping server update - local state is fresh');
+      return;
+    }
+    
+    if (localJson !== serverJson || serverIsNewer) {
+      console.log('WebSocket sync from server, turn:', serverGameState.currentTurn);
+      setGameState(serverGameState);
+      setStateVersion(v => v + 1);
+    }
+  }, [gameMode, serverGameState, showGame, gameState.board, gameState.currentTurn]);
+  
   // 定期从服务器同步状态（在线模式）
   useEffect(() => {
     if (gameMode !== 'online' || !roomId || !showGame) return;
@@ -108,9 +147,13 @@ function App() {
         const localJson = JSON.stringify(gameState.board);
         const serverJson = JSON.stringify(serverState.board);
         
-        if (localJson !== serverJson || gameState.currentTurn !== serverState.currentTurn) {
-          console.log('Auto sync from server');
+        // 检查服务器状态是否更新（通过 currentTurn 判断）
+        const serverIsNewer = serverState.currentTurn !== gameState.currentTurn;
+        
+        if (localJson !== serverJson || serverIsNewer) {
+          console.log('Auto sync from server, turn:', serverState.currentTurn);
           setGameState(serverState);
+          setStateVersion(v => v + 1);
         }
       } catch (e) {
         console.error('Sync error:', e);
@@ -398,12 +441,17 @@ function App() {
     
     // 应用新状态
     if (newState) {
+      // 更新本地状态版本
+      lastLocalUpdateRef.current = Date.now();
+      
       setGameState(newState);
       
-      // 在线模式广播新状态
+      // 在线模式广播新状态（延迟广播，确保状态已更新）
       if (gameMode === 'online') {
-        console.log('Broadcasting state');
-        broadcastGameState(newState);
+        console.log('Broadcasting state, turn:', newState.currentTurn);
+        setTimeout(() => {
+          broadcastGameState(newState);
+        }, 100);
       }
     }
   }, [gameMode, mpPlayerRole, gameState, broadcastGameState]);
