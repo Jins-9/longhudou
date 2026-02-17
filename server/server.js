@@ -175,8 +175,7 @@ const server = http.createServer((req, res) => {
     const roomId = url.searchParams.get('roomId')?.toUpperCase();
     const playerId = url.searchParams.get('playerId');
     
-    console.log(`[Room Status] RoomId: ${roomId}, PlayerId: ${playerId}`);
-    
+    // 减少日志输出，仅在房间不存在时记录
     const room = rooms.get(roomId);
     
     if (!room) {
@@ -188,8 +187,6 @@ const server = http.createServer((req, res) => {
     
     const isHost = room.hostId === playerId;
     const opponentConnected = isHost ? !!room.guestId : !!room.hostId;
-    
-    console.log(`[Room Status] Room found. Host: ${room.hostId}, Guest: ${room.guestId}, OpponentConnected: ${opponentConnected}`);
     
     res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -313,7 +310,6 @@ wss.on('connection', (ws, req) => {
   // 通知对方玩家已连接
   const opponentWs = getOpponentWs();
   if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
-    console.log(`[WS Connect] Notifying opponent of connection`);
     opponentWs.send(JSON.stringify({ type: 'opponent-connected' }));
     ws.send(JSON.stringify({ type: 'opponent-connected' }));
   }
@@ -322,7 +318,6 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log(`[WS Message] Type: ${message.type}, RoomId: ${roomId}, PlayerId: ${playerId}`);
       
       if (message.type === 'game-update') {
         // 更新房间游戏状态
@@ -333,18 +328,14 @@ wss.on('connection', (ws, req) => {
         }
         
         currentRoom.gameState = message.gameState;
-        console.log(`[WS Message] Game state updated`);
 
         // 转发给对手
         const opponentWs = getOpponentWs();
         if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
-          console.log(`[WS Message] Forwarding to opponent`);
           opponentWs.send(JSON.stringify({
             type: 'game-update',
             gameState: message.gameState,
           }));
-        } else {
-          console.log(`[WS Message] Opponent not available for forwarding`);
         }
       }
     } catch (e) {
