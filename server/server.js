@@ -3,9 +3,10 @@
  * 使用原生Node.js实现WebSocket通信
  */
 
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 
 // 游戏房间数据存储（内存中）
 const rooms = new Map();
@@ -270,7 +271,7 @@ server.on('upgrade', (request, socket, head) => {
   
   // 简单的WebSocket握手
   const acceptKey = request.headers['sec-websocket-key'];
-  const hash = require('crypto').createHash('sha1')
+  const hash = crypto.createHash('sha1')
     .update(acceptKey + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
     .digest('base64');
   
