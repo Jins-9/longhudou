@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { GameState } from '@/types/game';
 
 // Railway 后端服务器地址
-const SERVER_URL = 'https://clever-reprieve-production-2443.up.railway.app';
+const SERVER_URL = 'http://localhost:5000';
 
 // 生成玩家ID
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -181,7 +181,7 @@ export const useMultiplayer = () => {
     }
     
     // 使用 wss 协议连接 Railway
-    const wsUrl = `wss://clever-reprieve-production-2443.up.railway.app?room=${roomId}&playerId=${playerId.current}`;
+    const wsUrl = `wss://http://localhost:5000?room=${roomId}&playerId=${playerId.current}`;
     
     try {
       const ws = new WebSocket(wsUrl);
