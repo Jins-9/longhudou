@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { GameBoard } from './GameBoard';
 import { GameStatus } from './GameStatus';
 import { GameControls } from './GameControls';
@@ -23,7 +23,7 @@ interface GameScreenProps {
   isRefreshing?: boolean;
 }
 
-export const GameScreen: React.FC<GameScreenProps> = ({
+const GameScreenInner: React.FC<GameScreenProps> = ({
   board,
   currentTurn,
   selectedCell,
@@ -132,3 +132,5 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     </div>
   );
 };
+
+export const GameScreen = memo(GameScreenInner);

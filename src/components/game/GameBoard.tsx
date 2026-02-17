@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { GameCell } from './GameCell';
 import type { Cell, Side } from '@/types/game';
 
@@ -90,57 +90,84 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
     );
   }
-  // 检查是否是有效的移动目标
-  const isValidMoveTarget = (row: number, col: number): boolean => {
-    if (!selectedCell) return false;
+  
+  // 缓存移动目标计算结果
+  const moveTargets = useMemo(() => {
+    const targets = new Set<string>();
+    
+    if (!selectedCell) return targets;
     
     const fromRow = selectedCell.row;
     const fromCol = selectedCell.col;
-    const rowDiff = Math.abs(row - fromRow);
-    const colDiff = Math.abs(col - fromCol);
-    
-    // 只能移动到相邻格子
-    if (rowDiff + colDiff !== 1) return false;
-    
-    const targetCell = board[row][col];
     const fromCell = board[fromRow][fromCol];
     
-    if (!fromCell.piece) return false;
+    if (!fromCell.piece) return targets;
     
-    // 空格子可以移动
-    if (!targetCell.piece) return true;
+    // 检查四个相邻格子
+    const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
     
-    // 不能吃暗棋
-    if (!targetCell.piece.isRevealed) return false;
+    for (const [dr, dc] of directions) {
+      const newRow = fromRow + dr;
+      const newCol = fromCol + dc;
+      
+      if (newRow < 0 || newRow >= 4 || newCol < 0 || newCol >= 4) continue;
+      
+      const targetCell = board[newRow][newCol];
+      
+      // 空格子可以移动
+      if (!targetCell.piece) {
+        targets.add(`${newRow}-${newCol}`);
+        continue;
+      }
+      
+      // 不能吃暗棋
+      if (!targetCell.piece.isRevealed) continue;
+      
+      // 不能吃己方棋子
+      if (targetCell.piece.side === fromCell.piece.side) continue;
+      
+      // 检查对战结果
+      const battle = checkBattle(fromCell.piece, targetCell.piece);
+      if (battle.canAttack) {
+        targets.add(`${newRow}-${newCol}`);
+      }
+    }
     
-    // 不能吃己方棋子
-    if (targetCell.piece.side === fromCell.piece.side) return false;
+    return targets;
+  }, [board, selectedCell]);
+  
+  // 缓存同归于尽计算结果
+  const mutualDestructions = useMemo(() => {
+    const mutuals = new Set<string>();
     
-    // 检查对战结果
-    const battle = checkBattle(fromCell.piece, targetCell.piece);
-    return battle.canAttack;
-  };
-
-  // 检查是否是同归于尽
-  const isMutualDestruction = (row: number, col: number): boolean => {
-    if (!selectedCell) return false;
+    if (!selectedCell) return mutuals;
     
     const fromRow = selectedCell.row;
     const fromCol = selectedCell.col;
-    const rowDiff = Math.abs(row - fromRow);
-    const colDiff = Math.abs(col - fromCol);
-    
-    if (rowDiff + colDiff !== 1) return false;
-    
-    const targetCell = board[row][col];
     const fromCell = board[fromRow][fromCol];
     
-    if (!fromCell.piece || !targetCell.piece) return false;
-    if (!targetCell.piece.isRevealed) return false;
+    if (!fromCell.piece) return mutuals;
     
-    const battle = checkBattle(fromCell.piece, targetCell.piece);
-    return !!(battle.canAttack && battle.isMutual);
-  };
+    const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+    
+    for (const [dr, dc] of directions) {
+      const newRow = fromRow + dr;
+      const newCol = fromCol + dc;
+      
+      if (newRow < 0 || newRow >= 4 || newCol < 0 || newCol >= 4) continue;
+      
+      const targetCell = board[newRow][newCol];
+      
+      if (!targetCell.piece || !targetCell.piece.isRevealed) continue;
+      
+      const battle = checkBattle(fromCell.piece, targetCell.piece);
+      if (battle.canAttack && battle.isMutual) {
+        mutuals.add(`${newRow}-${newCol}`);
+      }
+    }
+    
+    return mutuals;
+  }, [board, selectedCell]);
 
   return (
     <div className="relative">
@@ -157,19 +184,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         {/* 4x4 格子 */}
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
           {board.map((row, rowIndex) =>
-            row.map((cell, colIndex) => (
-              <GameCell
-                key={`${rowIndex}-${colIndex}`}
-                cell={cell}
-                isSelected={
-                  selectedCell?.row === rowIndex && selectedCell?.col === colIndex
-                }
-                isValidMove={isValidMoveTarget(rowIndex, colIndex)}
-                isMutualDestruction={isMutualDestruction(rowIndex, colIndex)}
-                currentTurn={currentTurn}
-                onClick={() => onCellClick(rowIndex, colIndex)}
-              />
-            ))
+            row.map((cell, colIndex) => {
+              const cellKey = `${rowIndex}-${colIndex}`;
+              return (
+                <GameCell
+                  key={cellKey}
+                  cell={cell}
+                  isSelected={
+                    selectedCell?.row === rowIndex && selectedCell?.col === colIndex
+                  }
+                  isValidMove={moveTargets.has(cellKey)}
+                  isMutualDestruction={mutualDestructions.has(cellKey)}
+                  currentTurn={currentTurn}
+                  onClick={() => onCellClick(rowIndex, colIndex)}
+                />
+              );
+            })
           )}
         </div>
         

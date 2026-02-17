@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MainMenu, GameScreen } from '@/components/game';
 import { useMultiplayer } from '@/hooks/useMultiplayer';
 import { initializeBoard } from '@/hooks/useGame';
@@ -70,6 +70,9 @@ function App() {
   // 游戏是否已开始（防止重复初始化）
   const gameStartedRef = useRef(false);
 
+  // 缓存棋盘的 JSON 字符串，避免重复计算
+  const boardJson = useMemo(() => JSON.stringify(gameState.board), [gameState.board]);
+
   // ========== 自动开始游戏 ==========
   useEffect(() => {
     // 在线模式，双方都连接，游戏还没开始
@@ -108,8 +111,7 @@ function App() {
     }
     
     // 只有当服务器状态与本地不同时才更新
-    const localJson = JSON.stringify(gameState.board);
-    const serverJson = JSON.stringify(serverGameState.board);
+    const serverBoardJson = JSON.stringify(serverGameState.board);
     
     // 检查服务器状态是否更新（通过 currentTurn 判断）
     const serverIsNewer = serverGameState.currentTurn !== gameState.currentTurn;
@@ -121,11 +123,11 @@ function App() {
       return;
     }
     
-    if (localJson !== serverJson || serverIsNewer) {
+    if (boardJson !== serverBoardJson || serverIsNewer) {
       console.log('WebSocket sync from server, turn:', serverGameState.currentTurn);
       setGameState(serverGameState);
     }
-  }, [gameMode, serverGameState, showGame, gameState.board, gameState.currentTurn]);
+  }, [gameMode, serverGameState, showGame, boardJson, gameState.currentTurn]);
   
   // 定期从服务器同步状态（在线模式）
   useEffect(() => {
@@ -142,23 +144,22 @@ function App() {
         }
         
         // 只有当服务器状态与本地不同时才更新
-        const localJson = JSON.stringify(gameState.board);
-        const serverJson = JSON.stringify(serverState.board);
+        const serverBoardJson = JSON.stringify(serverState.board);
         
         // 检查服务器状态是否更新（通过 currentTurn 判断）
         const serverIsNewer = serverState.currentTurn !== gameState.currentTurn;
         
-        if (localJson !== serverJson || serverIsNewer) {
+        if (boardJson !== serverBoardJson || serverIsNewer) {
           console.log('Auto sync from server, turn:', serverState.currentTurn);
           setGameState(serverState);
         }
       } catch (e) {
         console.error('Sync error:', e);
       }
-    }, 1000);
+    }, 3000);
     
     return () => clearInterval(interval);
-  }, [gameMode, roomId, showGame, syncGameState, gameState.board, gameState.currentTurn]);
+  }, [gameMode, roomId, showGame, syncGameState, boardJson, gameState.currentTurn]);
 
   // ========== 手动刷新同步 ==========
   const handleRefresh = useCallback(async () => {
@@ -448,10 +449,10 @@ function App() {
         console.log('Broadcasting state, turn:', newState.currentTurn);
         setTimeout(() => {
           broadcastGameState(newState);
-        }, 100);
+        }, 50);
       }
     }
-  }, [gameMode, mpPlayerRole, gameState, broadcastGameState]);
+  }, [gameMode, mpPlayerRole, gameState.currentTurn, gameState.phase, gameState.selectedCell, gameState.board, gameState.dragonPiecesCount, gameState.tigerPiecesCount, broadcastGameState]);
 
   // ========== 渲染 ==========
 

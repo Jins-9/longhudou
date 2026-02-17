@@ -79,6 +79,8 @@ export const useMultiplayer = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const checkInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastGameStateRef = useRef<string>('');
+  const gameStateUpdateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // 初始化 playerId
   useEffect(() => {
@@ -247,7 +249,24 @@ export const useMultiplayer = () => {
             // 收到游戏状态更新，验证后再保存到 serverGameState
             try {
               if (isValidGameState(data.gameState)) {
-                setServerGameState(data.gameState);
+                // 使用节流减少频繁更新
+                const stateJson = JSON.stringify(data.gameState);
+                
+                // 如果状态没有变化，跳过更新
+                if (stateJson === lastGameStateRef.current) {
+                  return;
+                }
+                
+                // 清除之前的超时
+                if (gameStateUpdateTimeout.current) {
+                  clearTimeout(gameStateUpdateTimeout.current);
+                }
+                
+                // 延迟 50ms 更新，避免频繁更新
+                gameStateUpdateTimeout.current = setTimeout(() => {
+                  lastGameStateRef.current = stateJson;
+                  setServerGameState(data.gameState);
+                }, 50);
               } else {
                 console.error('Invalid game state received via WebSocket:', data.gameState);
               }
