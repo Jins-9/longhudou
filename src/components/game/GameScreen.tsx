@@ -22,6 +22,7 @@ interface GameScreenProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   refreshSuccess?: boolean | null;
+  onSurrender?: () => void;
 }
 
 const GameScreenInner: React.FC<GameScreenProps> = ({
@@ -40,6 +41,7 @@ const GameScreenInner: React.FC<GameScreenProps> = ({
   onRefresh,
   isRefreshing,
   refreshSuccess,
+  onSurrender,
 }) => {
   // 检查是否是当前玩家的回合
   const isMyTurn = playerRole ? playerRole === currentTurn : true;
@@ -112,6 +114,10 @@ const GameScreenInner: React.FC<GameScreenProps> = ({
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
           refreshSuccess={refreshSuccess}
+          onSurrender={onSurrender}
+          playerRole={playerRole}
+          currentTurn={currentTurn}
+          phase={phase}
         />
 
         {/* 刷新成功提示 */}

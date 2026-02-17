@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { GameRules } from './GameRules';
-import { RotateCcw, Home, RefreshCw } from 'lucide-react';
+import { RotateCcw, Home, RefreshCw, Flag } from 'lucide-react';
 
 interface GameControlsProps {
   onRestart: () => void;
@@ -9,6 +9,10 @@ interface GameControlsProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   refreshSuccess?: boolean | null;
+  onSurrender?: () => void;
+  playerRole?: string;
+  currentTurn?: string;
+  phase?: 'menu' | 'waiting' | 'playing' | 'ended';
 }
 
 export const GameControls: React.FC<GameControlsProps> = ({
@@ -17,6 +21,10 @@ export const GameControls: React.FC<GameControlsProps> = ({
   onRefresh,
   isRefreshing,
   refreshSuccess,
+  onSurrender,
+  playerRole,
+  currentTurn,
+  phase,
 }) => {
   return (
     <div className="flex flex-wrap justify-center gap-2 mt-4">
@@ -47,6 +55,19 @@ export const GameControls: React.FC<GameControlsProps> = ({
         >
           <RefreshCw className={`w-4 h-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
           {isRefreshing ? '刷新中...' : refreshSuccess === true ? '已刷新' : refreshSuccess === false ? '刷新失败' : '刷新'}
+        </Button>
+      )}
+
+      {/* 认输按钮 - 仅在游戏中显示 */}
+      {onSurrender && phase === 'playing' && (
+        <Button
+          onClick={onSurrender}
+          variant="outline"
+          size="sm"
+          className="bg-white border-red-300 text-red-600 hover:bg-red-50"
+        >
+          <Flag className="w-4 h-4 mr-1" />
+          认输
         </Button>
       )}
 

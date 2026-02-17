@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MainMenu, GameScreen } from '@/components/game';
 import { useMultiplayer } from '@/hooks/useMultiplayer';
 import { initializeBoard } from '@/hooks/useGame';
-import type { GameMode, GameState, GamePhase, Side } from '@/types/game';
+import type { GameMode, GameState, GamePhase, Side, Piece } from '@/types/game';
 import './App.css';
 
 // 创建初始游戏状态
@@ -233,13 +233,20 @@ function App() {
   // ========== 游戏操作 ==========
 
   // 开始本地游戏
-  const handleStartLocalGame = useCallback(() => {
+  const handleStartLocalGame = useCallback(async () => {
+    // 如果当前是在线模式，先退出房间
+    if (gameMode === 'online' && roomId) {
+      console.log('Leaving room before starting local game');
+      await leaveRoom();
+    }
+    
     setGameMode('local');
     gameStartedRef.current = false;
     setGameState(createInitialGameState());
     setShowGame(true);
     setErrorMessage(null);
-  }, []);
+    setRefreshSuccess(null);
+  }, [gameMode, roomId, leaveRoom]);
 
   // 创建房间
   const handleCreateRoom = useCallback(async (role: 'dragon' | 'tiger') => {
@@ -280,12 +287,20 @@ function App() {
   }, [leaveRoom]);
 
   // 返回主菜单
-  const handleBackToMenu = useCallback(() => {
+  const handleBackToMenu = useCallback(async () => {
+    // 如果当前是在线模式，先退出房间
+    if (gameMode === 'online' && roomId) {
+      console.log('Leaving room before returning to menu');
+      await leaveRoom();
+    }
+    
     gameStartedRef.current = false;
+    setGameMode('local');
+    setGameState(createInitialGameState());
     setShowGame(false);
-    setGameState(prev => ({ ...prev, phase: 'menu' }));
     setErrorMessage(null);
-  }, []);
+    setRefreshSuccess(null);
+  }, [gameMode, roomId, leaveRoom]);
 
   // 重新开始
   const handleRestart = useCallback(() => {
@@ -304,6 +319,40 @@ function App() {
       broadcastGameState(newState);
     }
   }, [gameMode, roomId, mpPlayerRole, broadcastGameState]);
+
+  // 认输
+  const handleSurrender = useCallback(() => {
+    // 如果游戏已结束，不处理
+    if (gameState.phase !== 'playing') {
+      return;
+    }
+    
+    // 确定认输方
+    const surrenderSide = gameMode === 'online' ? mpPlayerRole : gameState.currentTurn;
+    
+    if (!surrenderSide || surrenderSide === 'spectator') {
+      console.log('Cannot surrender: invalid role');
+      return;
+    }
+    
+    // 确定获胜方
+    const winnerSide: Side = surrenderSide === 'dragon' ? 'tiger' : 'dragon';
+    
+    // 创建结束状态
+    const newState = {
+      ...gameState,
+      phase: 'ended' as GamePhase,
+      winner: winnerSide,
+      message: `${surrenderSide === 'dragon' ? '龙方' : '虎方'}认输，${winnerSide === 'dragon' ? '龙方' : '虎方'}获胜！`,
+    };
+    
+    setGameState(newState);
+    
+    // 在线模式广播新状态
+    if (gameMode === 'online') {
+      broadcastGameState(newState);
+    }
+  }, [gameState, gameMode, mpPlayerRole, broadcastGameState]);
 
   // ========== 格子点击处理 ==========
   
@@ -427,6 +476,24 @@ function App() {
               let winner: Side | null = null;
               let phase: GamePhase = 'playing';
               
+              // 收集剩余棋子的信息
+              const dragonPieces: Piece[] = [];
+              const tigerPieces: Piece[] = [];
+              
+              for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 4; col++) {
+                  const cell = newBoard[row][col];
+                  if (cell.piece && cell.piece.isRevealed) {
+                    if (cell.piece.side === 'dragon') {
+                      dragonPieces.push(cell.piece);
+                    } else {
+                      tigerPieces.push(cell.piece);
+                    }
+                  }
+                }
+              }
+              
+              // 胜利条件判断
               if (dragonCount === 0 && tigerCount === 0) {
                 winner = null;
                 phase = 'ended';
@@ -439,6 +506,45 @@ function App() {
                 winner = 'dragon';
                 phase = 'ended';
                 message = '龙方获胜！吃掉了虎方所有棋子！';
+              } else if (dragonCount === 1 && tigerCount === 1) {
+                // 双方各剩一个棋子，比较等级
+                const dragonPiece = dragonPieces[0];
+                const tigerPiece = tigerPieces[0];
+                
+                if (dragonPiece.level > tigerPiece.level) {
+                  winner = 'dragon';
+                  phase = 'ended';
+                  message = `龙方获胜！${dragonPiece.name}(${dragonPiece.level}) > ${tigerPiece.name}(${tigerPiece.level})`;
+                } else if (tigerPiece.level > dragonPiece.level) {
+                  winner = 'tiger';
+                  phase = 'ended';
+                  message = `虎方获胜！${tigerPiece.name}(${tigerPiece.level}) > ${dragonPiece.name}(${dragonPiece.level})`;
+                } else {
+                  // 等级相同，和棋
+                  winner = null;
+                  phase = 'ended';
+                  message = '平局！双方棋子等级相同！';
+                }
+              } else if (dragonCount === 2 && tigerCount === 0) {
+                // 龙方剩两个棋子，检查是否等级相同
+                const dragonPiece1 = dragonPieces[0];
+                const dragonPiece2 = dragonPieces[1];
+                
+                if (dragonPiece1.level === dragonPiece2.level) {
+                  winner = null;
+                  phase = 'ended';
+                  message = '平局！龙方仅剩两张相同等级的棋子！';
+                }
+              } else if (tigerCount === 2 && dragonCount === 0) {
+                // 虎方剩两个棋子，检查是否等级相同
+                const tigerPiece1 = tigerPieces[0];
+                const tigerPiece2 = tigerPieces[1];
+                
+                if (tigerPiece1.level === tigerPiece2.level) {
+                  winner = null;
+                  phase = 'ended';
+                  message = '平局！虎方仅剩两张相同等级的棋子！';
+                }
               }
               
               newState = {
@@ -529,6 +635,7 @@ function App() {
           onRefresh={gameMode === 'online' ? handleRefresh : undefined}
           isRefreshing={isRefreshing}
           refreshSuccess={refreshSuccess}
+          onSurrender={gameState.phase === 'playing' ? handleSurrender : undefined}
         />
       </div>
     );
