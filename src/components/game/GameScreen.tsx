@@ -21,6 +21,7 @@ interface GameScreenProps {
   onBackToMenu: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  refreshSuccess?: boolean | null;
 }
 
 const GameScreenInner: React.FC<GameScreenProps> = ({
@@ -38,6 +39,7 @@ const GameScreenInner: React.FC<GameScreenProps> = ({
   onBackToMenu,
   onRefresh,
   isRefreshing,
+  refreshSuccess,
 }) => {
   // 检查是否是当前玩家的回合
   const isMyTurn = playerRole ? playerRole === currentTurn : true;
@@ -109,7 +111,17 @@ const GameScreenInner: React.FC<GameScreenProps> = ({
           onBackToMenu={onBackToMenu}
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
+          refreshSuccess={refreshSuccess}
         />
+
+        {/* 刷新成功提示 */}
+        {refreshSuccess === true && (
+          <div className="text-center mb-2">
+            <div className="inline-flex items-center bg-green-100 text-green-700 rounded-full px-4 py-2 shadow-sm animate-fade-in">
+              <span className="text-sm font-medium">✓ 刷新成功</span>
+            </div>
+          </div>
+        )}
 
         {/* 操作提示 */}
         <div className="mt-6 text-center">

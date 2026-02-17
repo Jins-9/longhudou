@@ -48,12 +48,16 @@ function App() {
   const [showGame, setShowGame] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshSuccess, setRefreshSuccess] = useState<boolean | null>(null);
   
   // 游戏状态（本地或在线共享）
   const [gameState, setGameState] = useState<GameState>(createInitialGameState());
   
   // 状态版本控制（防止竞态条件）
   const lastLocalUpdateRef = useRef<number>(0);
+  const isRefreshingRef = useRef<boolean>(false);
+  const stateUpdateLockRef = useRef<boolean>(false);
+  const stateVersionRef = useRef<number>(0);
   
   const {
     roomId,
@@ -110,21 +114,28 @@ function App() {
       return;
     }
     
+    // 如果正在刷新或本地刚刚更新过，跳过这次更新
+    if (isRefreshingRef.current) {
+      console.log('Skipping server update - refreshing');
+      return;
+    }
+    
     // 只有当服务器状态与本地不同时才更新
     const serverBoardJson = JSON.stringify(serverGameState.board);
     
     // 检查服务器状态是否更新（通过 currentTurn 判断）
     const serverIsNewer = serverGameState.currentTurn !== gameState.currentTurn;
     
-    // 如果本地刚刚更新过（100ms内），跳过这次更新（防止竞态条件）
+    // 如果本地刚刚更新过（150ms内），跳过这次更新（防止竞态条件）
     const timeSinceLastUpdate = Date.now() - lastLocalUpdateRef.current;
-    if (timeSinceLastUpdate < 200 && serverIsNewer) {
+    if (timeSinceLastUpdate < 150 && serverIsNewer) {
       console.log('Skipping server update - local state is fresh');
       return;
     }
     
     if (boardJson !== serverBoardJson || serverIsNewer) {
       console.log('WebSocket sync from server, turn:', serverGameState.currentTurn);
+      stateVersionRef.current++;
       setGameState(serverGameState);
     }
   }, [gameMode, serverGameState, showGame, boardJson, gameState.currentTurn]);
@@ -134,6 +145,12 @@ function App() {
     if (gameMode !== 'online' || !roomId || !showGame) return;
     
     const interval = setInterval(async () => {
+      // 如果正在刷新或本地刚刚更新过，跳过这次同步
+      if (isRefreshingRef.current || stateUpdateLockRef.current) {
+        console.log('Auto sync skipped - refreshing or locked');
+        return;
+      }
+      
       try {
         const serverState = await syncGameState();
         
@@ -151,6 +168,7 @@ function App() {
         
         if (boardJson !== serverBoardJson || serverIsNewer) {
           console.log('Auto sync from server, turn:', serverState.currentTurn);
+          stateVersionRef.current++;
           setGameState(serverState);
         }
       } catch (e) {
@@ -163,26 +181,54 @@ function App() {
 
   // ========== 手动刷新同步 ==========
   const handleRefresh = useCallback(async () => {
-    if (gameMode !== 'online' || !roomId) return;
+    // 防止重复刷新
+    if (gameMode !== 'online' || !roomId || isRefreshingRef.current) {
+      console.log('Refresh skipped: invalid mode or already refreshing');
+      return;
+    }
     
+    isRefreshingRef.current = true;
     setIsRefreshing(true);
+    setRefreshSuccess(null);
     console.log('Manual refresh...');
     
     try {
       const serverState = await syncGameState();
       
       if (serverState && isValidGameState(serverState)) {
-        setGameState(serverState);
-        console.log('Refreshed from server');
+        // 检查服务器状态是否更新（通过 currentTurn 判断）
+        const serverIsNewer = serverState.currentTurn !== gameState.currentTurn;
+        const serverBoardJson = JSON.stringify(serverState.board);
+        
+        // 只有当服务器状态与本地不同时才更新
+        if (boardJson !== serverBoardJson || serverIsNewer) {
+          setGameState(serverState);
+          setRefreshSuccess(true);
+          console.log('Refreshed from server, turn:', serverState.currentTurn);
+          
+          // 3秒后隐藏成功提示
+          setTimeout(() => setRefreshSuccess(null), 3000);
+        } else {
+          console.log('Server state is same as local, no update needed');
+          setRefreshSuccess(true);
+          setTimeout(() => setRefreshSuccess(null), 2000);
+        }
       } else {
         console.warn('Invalid state from server');
+        setRefreshSuccess(false);
+        setErrorMessage('服务器返回了无效的游戏状态');
+        setTimeout(() => setErrorMessage(null), 3000);
       }
     } catch (e) {
       console.error('Refresh error:', e);
+      setRefreshSuccess(false);
+      setErrorMessage('刷新失败，请检查网络连接');
+      setTimeout(() => setErrorMessage(null), 3000);
+    } finally {
+      setIsRefreshing(false);
+      isRefreshingRef.current = false;
     }
-    
-    setIsRefreshing(false);
-  }, [gameMode, roomId, syncGameState]);
+  }, [gameMode, roomId, syncGameState, gameState.currentTurn, boardJson]);
 
   // ========== 游戏操作 ==========
 
@@ -439,8 +485,15 @@ function App() {
     
     // 应用新状态
     if (newState) {
+      // 如果正在刷新，不应用状态更新
+      if (isRefreshingRef.current) {
+        console.log('State update skipped - refreshing');
+        return;
+      }
+      
       // 更新本地状态版本
       lastLocalUpdateRef.current = Date.now();
+      stateVersionRef.current++;
       
       setGameState(newState);
       
@@ -475,6 +528,7 @@ function App() {
           onBackToMenu={handleBackToMenu}
           onRefresh={gameMode === 'online' ? handleRefresh : undefined}
           isRefreshing={isRefreshing}
+          refreshSuccess={refreshSuccess}
         />
       </div>
     );

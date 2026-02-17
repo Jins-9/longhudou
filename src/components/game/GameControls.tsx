@@ -8,6 +8,7 @@ interface GameControlsProps {
   onBackToMenu: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  refreshSuccess?: boolean | null;
 }
 
 export const GameControls: React.FC<GameControlsProps> = ({
@@ -15,6 +16,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
   onBackToMenu,
   onRefresh,
   isRefreshing,
+  refreshSuccess,
 }) => {
   return (
     <div className="flex flex-wrap justify-center gap-2 mt-4">
@@ -37,10 +39,14 @@ export const GameControls: React.FC<GameControlsProps> = ({
           variant="outline"
           size="sm"
           disabled={isRefreshing}
-          className="bg-white border-blue-300 text-blue-600 hover:bg-blue-50"
+          className={`
+            bg-white border-blue-300 text-blue-600 hover:bg-blue-50
+            ${refreshSuccess === true ? 'border-green-500 text-green-600 hover:bg-green-50' : ''}
+            ${refreshSuccess === false ? 'border-red-500 text-red-600 hover:bg-red-50' : ''}
+          `}
         >
           <RefreshCw className={`w-4 h-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
-          {isRefreshing ? '刷新中...' : '刷新'}
+          {isRefreshing ? '刷新中...' : refreshSuccess === true ? '已刷新' : refreshSuccess === false ? '刷新失败' : '刷新'}
         </Button>
       )}
 
