@@ -135,7 +135,7 @@ export const useMultiplayer = () => {
       const result = await apiRequest(`/api/room-status?roomId=${roomId}&playerId=${playerId.current}`);
       
       if (result.success) {
-        setMpState((prev: MultiplayerState) => ({
+        setMpState(prev => ({
           ...prev,
           opponentConnected: result.opponentConnected,
           gameStarted: result.gameState?.phase === 'playing',
@@ -195,9 +195,9 @@ export const useMultiplayer = () => {
           const data = JSON.parse(event.data);
           
           if (data.type === 'opponent-connected') {
-            setMpState((prev: MultiplayerState) => ({ ...prev, opponentConnected: true }));
+            setMpState(prev => ({ ...prev, opponentConnected: true }));
           } else if (data.type === 'opponent-disconnected') {
-            setMpState((prev: MultiplayerState) => ({ ...prev, opponentConnected: false }));
+            setMpState(prev => ({ ...prev, opponentConnected: false }));
           } else if (data.type === 'game-update' && data.gameState) {
             // 收到游戏状态更新，保存到 serverGameState
             setServerGameState(data.gameState);
@@ -259,7 +259,7 @@ export const useMultiplayer = () => {
   const startGame = useCallback(async () => {
     if (!mpState.roomId) return;
     
-    setMpState((prev: MultiplayerState) => ({ ...prev, gameStarted: true }));
+    setMpState(prev => ({ ...prev, gameStarted: true }));
   }, [mpState.roomId]);
 
   // 广播游戏状态 - 直接更新服务器状态
