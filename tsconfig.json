@@ -9,9 +9,9 @@
     }
   ],
   "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
     }
   }
-}
