@@ -3,7 +3,7 @@ import { MainMenu, GameScreen } from '@/components/game';
 import { useMultiplayer } from '@/hooks/useMultiplayer';
 import { initializeBoard } from '@/hooks/useGame';
 import type { GameMode, GameState, GamePhase, Side } from '@/types/game';
-// import './App.css';
+import './App.css';
 
 // 创建初始游戏状态
 const createInitialGameState = (): GameState => ({
@@ -53,7 +53,6 @@ function App() {
   const [gameState, setGameState] = useState<GameState>(createInitialGameState());
   
   // 状态版本控制（防止竞态条件）
-  const [stateVersion, setStateVersion] = useState(0);
   const lastLocalUpdateRef = useRef<number>(0);
   
   const {
@@ -125,7 +124,6 @@ function App() {
     if (localJson !== serverJson || serverIsNewer) {
       console.log('WebSocket sync from server, turn:', serverGameState.currentTurn);
       setGameState(serverGameState);
-      setStateVersion(v => v + 1);
     }
   }, [gameMode, serverGameState, showGame, gameState.board, gameState.currentTurn]);
   
@@ -153,7 +151,6 @@ function App() {
         if (localJson !== serverJson || serverIsNewer) {
           console.log('Auto sync from server, turn:', serverState.currentTurn);
           setGameState(serverState);
-          setStateVersion(v => v + 1);
         }
       } catch (e) {
         console.error('Sync error:', e);
