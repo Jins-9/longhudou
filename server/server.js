@@ -4,7 +4,7 @@
  */
 
 import http from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 
 // 游戏房间数据存储（内存中）
 const rooms = new Map();
@@ -274,11 +274,18 @@ wss.on('connection', (ws, req) => {
   const clientKey = `${roomId}:${playerId}`;
   clients.set(clientKey, ws);
 
-  // 通知对方玩家已连接
-  const isHost = room.hostId === playerId;
-  const opponentKey = isHost ? `${roomId}:${room.guestId}` : `${roomId}:${room.hostId}`;
-  const opponentWs = clients.get(opponentKey);
+  // 辅助函数：获取对手的 WebSocket
+  const getOpponentWs = () => {
+    const currentRoom = rooms.get(roomId);
+    if (!currentRoom) return null;
+    
+    const isHost = currentRoom.hostId === playerId;
+    const opponentId = isHost ? currentRoom.guestId : currentRoom.hostId;
+    return opponentId ? clients.get(`${roomId}:${opponentId}`) : null;
+  };
 
+  // 通知对方玩家已连接
+  const opponentWs = getOpponentWs();
   if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
     opponentWs.send(JSON.stringify({ type: 'opponent-connected' }));
     ws.send(JSON.stringify({ type: 'opponent-connected' }));
@@ -291,10 +298,13 @@ wss.on('connection', (ws, req) => {
       
       if (message.type === 'game-update') {
         // 更新房间游戏状态
-        room.gameState = message.gameState;
+        const currentRoom = rooms.get(roomId);
+        if (!currentRoom) return;
+        
+        currentRoom.gameState = message.gameState;
 
         // 转发给对手
-        const opponentWs = clients.get(opponentKey);
+        const opponentWs = getOpponentWs();
         if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
           opponentWs.send(JSON.stringify({
             type: 'game-update',
@@ -302,7 +312,6 @@ wss.on('connection', (ws, req) => {
           }));
         }
       }
-      // 可添加其他消息类型处理
     } catch (e) {
       console.error('Invalid message from client:', e.message);
     }
@@ -313,7 +322,7 @@ wss.on('connection', (ws, req) => {
     clients.delete(clientKey);
 
     // 通知对手
-    const opponentWs = clients.get(opponentKey);
+    const opponentWs = getOpponentWs();
     if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
       opponentWs.send(JSON.stringify({ type: 'opponent-disconnected' }));
     }
