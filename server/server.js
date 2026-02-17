@@ -1,12 +1,10 @@
 /**
  * 龙虎斗游戏后端服务
- * 使用原生Node.js实现WebSocket通信
+ * 使用 ws 库实现 WebSocket 通信
  */
 
 import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+import { WebSocketServer } from 'ws';
 
 // 游戏房间数据存储（内存中）
 const rooms = new Map();
@@ -250,193 +248,82 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
-// WebSocket升级处理
+// 创建 WebSocket 服务器，绑定到同一个 HTTP 服务器
+const wss = new WebSocketServer({ server });
+
+// 存储客户端连接：roomId:playerId -> WebSocket
 const clients = new Map();
 
-server.on('upgrade', (request, socket, head) => {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+wss.on('connection', (ws, req) => {
+  // 从请求 URL 中提取 roomId 和 playerId
+  const url = new URL(req.url, `http://${req.headers.host}`);
   const roomId = url.searchParams.get('room')?.toUpperCase();
   const playerId = url.searchParams.get('playerId');
-  
+
   if (!roomId || !playerId) {
-    socket.destroy();
+    ws.close();
     return;
   }
-  
+
   const room = rooms.get(roomId);
   if (!room) {
-    socket.destroy();
+    ws.close();
     return;
   }
-  
-  // 简单的WebSocket握手
-  const acceptKey = request.headers['sec-websocket-key'];
-  const hash = crypto.createHash('sha1')
-    .update(acceptKey + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
-    .digest('base64');
-  
-  socket.write(
-    'HTTP/1.1 101 Switching Protocols\r\n' +
-    'Upgrade: websocket\r\n' +
-    'Connection: Upgrade\r\n' +
-    `Sec-WebSocket-Accept: ${hash}\r\n` +
-    '\r\n'
-  );
-  
-  // 存储客户端连接
+
   const clientKey = `${roomId}:${playerId}`;
-  clients.set(clientKey, socket);
-  
+  clients.set(clientKey, ws);
+
   // 通知对方玩家已连接
   const isHost = room.hostId === playerId;
-  const opponentKey = isHost 
-    ? `${roomId}:${room.guestId}` 
-    : `${roomId}:${room.hostId}`;
-  const opponentSocket = clients.get(opponentKey);
-  
-  if (opponentSocket) {
-    sendWebSocketMessage(opponentSocket, { type: 'opponent-connected' });
-    sendWebSocketMessage(socket, { type: 'opponent-connected' });
+  const opponentKey = isHost ? `${roomId}:${room.guestId}` : `${roomId}:${room.hostId}`;
+  const opponentWs = clients.get(opponentKey);
+
+  if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+    opponentWs.send(JSON.stringify({ type: 'opponent-connected' }));
+    ws.send(JSON.stringify({ type: 'opponent-connected' }));
   }
-  
-  // 处理消息
-  socket.on('data', (data) => {
+
+  // 处理收到的消息
+  ws.on('message', (data) => {
     try {
-      const message = parseWebSocketFrame(data, socket);
-      if (!message) return;
+      const message = JSON.parse(data.toString());
       
-      const msg = JSON.parse(message);
-      
-      // 广播游戏状态更新
-      if (msg.type === 'game-update') {
-        room.gameState = msg.gameState;
-        
-        // 通知对方
-        const opponentKey = isHost 
-          ? `${roomId}:${room.guestId}` 
-          : `${roomId}:${room.hostId}`;
-        const opponentSocket = clients.get(opponentKey);
-        
-        if (opponentSocket) {
-          sendWebSocketMessage(opponentSocket, {
+      if (message.type === 'game-update') {
+        // 更新房间游戏状态
+        room.gameState = message.gameState;
+
+        // 转发给对手
+        const opponentWs = clients.get(opponentKey);
+        if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+          opponentWs.send(JSON.stringify({
             type: 'game-update',
-            gameState: msg.gameState,
-          });
+            gameState: message.gameState,
+          }));
         }
       }
+      // 可添加其他消息类型处理
     } catch (e) {
-      console.error('WebSocket message error:', e);
+      console.error('Invalid message from client:', e.message);
     }
   });
-  
-  // 清理
-  socket.on('close', () => {
+
+  // 处理连接关闭
+  ws.on('close', () => {
     clients.delete(clientKey);
-    
-    // 通知对方玩家已断开
-    const opponentKey = isHost 
-      ? `${roomId}:${room.guestId}` 
-      : `${roomId}:${room.hostId}`;
-    const opponentSocket = clients.get(opponentKey);
-    
-    if (opponentSocket) {
-      sendWebSocketMessage(opponentSocket, { type: 'opponent-disconnected' });
+
+    // 通知对手
+    const opponentWs = clients.get(opponentKey);
+    if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+      opponentWs.send(JSON.stringify({ type: 'opponent-disconnected' }));
     }
+  });
+
+  // 处理错误
+  ws.on('error', (err) => {
+    console.error('WebSocket error:', err);
   });
 });
-
-// 解析WebSocket帧
-function parseWebSocketFrame(buffer, socket) {
-  if (buffer.length < 2) return null;
-  
-  const fin = (buffer[0] & 0x80) === 0x80;
-  const opcode = buffer[0] & 0x0f;
-  const masked = (buffer[1] & 0x80) === 0x80;
-  let payloadLength = buffer[1] & 0x7f;
-  
-  // 处理控制帧
-  // 0x08: Close frame
-  if (opcode === 0x08) {
-    // 发送关闭帧响应
-    if (socket && !socket.destroyed) {
-      socket.write(Buffer.from([0x88, 0x00]));
-    }
-    return null;
-  }
-  
-  // 0x09: Ping frame - 回复 Pong
-  if (opcode === 0x09) {
-    if (socket && !socket.destroyed) {
-      socket.write(Buffer.from([0x8A, 0x00]));
-    }
-    return null;
-  }
-  
-  // 0x0A: Pong frame - 忽略
-  if (opcode === 0x0A) {
-    return null;
-  }
-  
-  // 只处理文本帧 (0x01) 和二进制帧 (0x02)
-  if (opcode !== 0x01 && opcode !== 0x02) {
-    return null;
-  }
-  
-  let offset = 2;
-  
-  if (payloadLength === 126) {
-    payloadLength = buffer.readUInt16BE(2);
-    offset = 4;
-  } else if (payloadLength === 127) {
-    payloadLength = buffer.readUInt32BE(2) * 0x100000000 + buffer.readUInt32BE(6);
-    offset = 10;
-  }
-  
-  let maskingKey;
-  if (masked) {
-    maskingKey = buffer.slice(offset, offset + 4);
-    offset += 4;
-  }
-  
-  const payload = buffer.slice(offset, offset + payloadLength);
-  
-  if (masked) {
-    for (let i = 0; i < payload.length; i++) {
-      payload[i] ^= maskingKey[i % 4];
-    }
-  }
-  
-  return payload.toString('utf8');
-}
-
-// 发送WebSocket消息
-function sendWebSocketMessage(socket, data) {
-  const message = JSON.stringify(data);
-  const length = Buffer.byteLength(message);
-  
-  let frame;
-  if (length < 126) {
-    frame = Buffer.allocUnsafe(2 + length);
-    frame[0] = 0x81;
-    frame[1] = length;
-    frame.write(message, 2);
-  } else if (length < 65536) {
-    frame = Buffer.allocUnsafe(4 + length);
-    frame[0] = 0x81;
-    frame[1] = 126;
-    frame.writeUInt16BE(length, 2);
-    frame.write(message, 4);
-  } else {
-    frame = Buffer.allocUnsafe(10 + length);
-    frame[0] = 0x81;
-    frame[1] = 127;
-    frame.writeUInt32BE(0, 2);
-    frame.writeUInt32BE(length, 6);
-    frame.write(message, 10);
-  }
-  
-  socket.write(frame);
-}
 
 // 清理过期房间（每10分钟）
 setInterval(() => {
