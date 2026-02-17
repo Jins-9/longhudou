@@ -10,6 +10,35 @@ interface GameBoardProps {
   playerRole?: string;
 }
 
+// 验证棋盘的有效性
+const isValidBoard = (board: any): board is Cell[][] => {
+  if (!board || !Array.isArray(board)) return false;
+  if (board.length !== 4) return false;
+  
+  for (const row of board) {
+    if (!Array.isArray(row) || row.length !== 4) return false;
+    
+    for (const cell of row) {
+      if (!cell || typeof cell !== 'object') return false;
+      if (typeof cell.row !== 'number' || typeof cell.col !== 'number') return false;
+      
+      // 如果有棋子，验证棋子结构
+      if (cell.piece) {
+        if (typeof cell.piece !== 'object') return false;
+        if (typeof cell.piece.id !== 'string') return false;
+        if (typeof cell.piece.type !== 'string') return false;
+        if (cell.piece.side !== 'dragon' && cell.piece.side !== 'tiger') return false;
+        if (typeof cell.piece.level !== 'number') return false;
+        if (typeof cell.piece.isRevealed !== 'boolean') return false;
+        if (typeof cell.piece.name !== 'string') return false;
+        if (typeof cell.piece.emoji !== 'string') return false;
+      }
+    }
+  }
+  
+  return true;
+};
+
 // 检查对战结果 - 大克小，同级同归于尽，王不能吃王
 const checkBattle = (attacker: any, defender: any): { canAttack: boolean; isMutual?: boolean } => {
   // 相同阵营不能吃
@@ -54,7 +83,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   onCellClick,
 }) => {
   // 安全检查：如果 board 无效，显示加载状态
-  if (!board || !Array.isArray(board) || board.length === 0) {
+  if (!isValidBoard(board)) {
     return (
       <div className="flex items-center justify-center p-8 bg-slate-100 rounded-2xl">
         <div className="text-slate-500">棋盘加载中...</div>

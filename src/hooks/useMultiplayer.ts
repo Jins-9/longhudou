@@ -18,6 +18,43 @@ const getPlayerId = () => {
   return playerId;
 };
 
+// 验证游戏状态的有效性
+const isValidGameState = (gameState: any): gameState is GameState => {
+  if (!gameState || typeof gameState !== 'object') return false;
+  
+  // 验证 board 是否为 4x4 数组
+  if (!Array.isArray(gameState.board) || gameState.board.length !== 4) return false;
+  for (const row of gameState.board) {
+    if (!Array.isArray(row) || row.length !== 4) return false;
+  }
+  
+  // 验证 currentTurn 是否有效
+  if (gameState.currentTurn !== 'dragon' && gameState.currentTurn !== 'tiger') return false;
+  
+  // 验证 phase 是否有效
+  const validPhases = ['menu', 'waiting', 'playing', 'ended'];
+  if (!validPhases.includes(gameState.phase)) return false;
+  
+  // 验证 winner 是否有效
+  if (gameState.winner !== null && gameState.winner !== 'dragon' && gameState.winner !== 'tiger') return false;
+  
+  // 验证数字字段
+  if (typeof gameState.dragonPiecesCount !== 'number' || gameState.dragonPiecesCount < 0) return false;
+  if (typeof gameState.tigerPiecesCount !== 'number' || gameState.tigerPiecesCount < 0) return false;
+  
+  // 验证 message 是否为字符串
+  if (typeof gameState.message !== 'string') return false;
+  
+  // 验证 playerRole 是否有效
+  const validRoles = ['dragon', 'tiger', 'spectator'];
+  if (!validRoles.includes(gameState.playerRole)) return false;
+  
+  // 验证 gameMode 是否有效
+  if (gameState.gameMode !== 'local' && gameState.gameMode !== 'online') return false;
+  
+  return true;
+};
+
 interface MultiplayerState {
   roomId: string | null;
   playerRole: 'dragon' | 'tiger' | 'spectator';
@@ -141,9 +178,17 @@ export const useMultiplayer = () => {
           gameStarted: result.gameState?.phase === 'playing',
         }));
         
-        // 如果有游戏状态更新，保存到 serverGameState
+        // 如果有游戏状态更新，验证后再保存到 serverGameState
         if (result.gameState) {
-          setServerGameState(result.gameState);
+          try {
+            if (isValidGameState(result.gameState)) {
+              setServerGameState(result.gameState);
+            } else {
+              console.error('Invalid game state received from server:', result.gameState);
+            }
+          } catch (e) {
+            console.error('Error validating game state:', e);
+          }
         }
       }
     } catch (e) {
@@ -199,8 +244,16 @@ export const useMultiplayer = () => {
           } else if (data.type === 'opponent-disconnected') {
             setMpState(prev => ({ ...prev, opponentConnected: false }));
           } else if (data.type === 'game-update' && data.gameState) {
-            // 收到游戏状态更新，保存到 serverGameState
-            setServerGameState(data.gameState);
+            // 收到游戏状态更新，验证后再保存到 serverGameState
+            try {
+              if (isValidGameState(data.gameState)) {
+                setServerGameState(data.gameState);
+              } else {
+                console.error('Invalid game state received via WebSocket:', data.gameState);
+              }
+            } catch (e) {
+              console.error('Error validating game state from WebSocket:', e);
+            }
           }
         } catch (e) {
           console.error('WebSocket message error:', e);
@@ -293,14 +346,25 @@ export const useMultiplayer = () => {
       const result = await apiRequest(`/api/room-status?roomId=${mpState.roomId}&playerId=${playerId.current}`);
       
       if (result.success && result.gameState) {
-        setServerGameState(result.gameState);
-        return result.gameState;
+        // 验证游戏状态
+        try {
+          if (isValidGameState(result.gameState)) {
+            setServerGameState(result.gameState);
+            return result.gameState;
+          } else {
+            console.error('Invalid game state received during sync:', result.gameState);
+            return null;
+          }
+        } catch (e) {
+          console.error('Error validating game state during sync:', e);
+          return null;
+        }
       }
+      return null;
     } catch (e) {
       console.error('Sync error:', e);
+      return null;
     }
-    
-    return null;
   }, [mpState.roomId, apiRequest]);
 
   // 清理
