@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { GameState } from '@/types/game';
 
 // Railway 后端服务器地址
-const SERVER_URL = 'https://longhudou-production.up.railway.app';
+const SERVER_URL = 'https://clever-reprieve-production-2443.up.railway.app';
 
 // 生成玩家ID
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -135,7 +135,7 @@ export const useMultiplayer = () => {
       const result = await apiRequest(`/api/room-status?roomId=${roomId}&playerId=${playerId.current}`);
       
       if (result.success) {
-        setMpState(prev => ({
+        setMpState((prev: MultiplayerState) => ({
           ...prev,
           opponentConnected: result.opponentConnected,
           gameStarted: result.gameState?.phase === 'playing',
@@ -181,7 +181,7 @@ export const useMultiplayer = () => {
     }
     
     // 使用 wss 协议连接 Railway
-    const wsUrl = `wss://longhudou-production.up.railway.app?room=${roomId}&playerId=${playerId.current}`;
+    const wsUrl = `wss://clever-reprieve-production-2443.up.railway.app?room=${roomId}&playerId=${playerId.current}`;
     
     try {
       const ws = new WebSocket(wsUrl);
@@ -195,9 +195,9 @@ export const useMultiplayer = () => {
           const data = JSON.parse(event.data);
           
           if (data.type === 'opponent-connected') {
-            setMpState(prev => ({ ...prev, opponentConnected: true }));
+            setMpState((prev: MultiplayerState) => ({ ...prev, opponentConnected: true }));
           } else if (data.type === 'opponent-disconnected') {
-            setMpState(prev => ({ ...prev, opponentConnected: false }));
+            setMpState((prev: MultiplayerState) => ({ ...prev, opponentConnected: false }));
           } else if (data.type === 'game-update' && data.gameState) {
             // 收到游戏状态更新，保存到 serverGameState
             setServerGameState(data.gameState);
@@ -259,7 +259,7 @@ export const useMultiplayer = () => {
   const startGame = useCallback(async () => {
     if (!mpState.roomId) return;
     
-    setMpState(prev => ({ ...prev, gameStarted: true }));
+    setMpState((prev: MultiplayerState) => ({ ...prev, gameStarted: true }));
   }, [mpState.roomId]);
 
   // 广播游戏状态 - 直接更新服务器状态
