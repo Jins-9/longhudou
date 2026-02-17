@@ -41,8 +41,9 @@ const server = http.createServer((req, res) => {
 
   // API路由
   if (pathname === '/api/health') {
+    console.log(`[Health Check] Total rooms: ${rooms.size}, Total clients: ${clients.size}`);
     res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', rooms: rooms.size }));
+    res.end(JSON.stringify({ status: 'ok', rooms: rooms.size, clients: clients.size }));
     return;
   }
 
@@ -55,6 +56,8 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         const playerId = data.playerId || generatePlayerId();
         const playerRole = data.role || 'dragon';
+        
+        console.log(`[Create Room] PlayerId: ${playerId}, Role: ${playerRole}`);
         
         const roomId = generateRoomId();
         const room = {
@@ -69,6 +72,8 @@ const server = http.createServer((req, res) => {
         
         rooms.set(roomId, room);
         
+        console.log(`[Create Room] Success. RoomId: ${roomId}, Total rooms: ${rooms.size}`);
+        
         res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
@@ -77,6 +82,7 @@ const server = http.createServer((req, res) => {
           playerRole,
         }));
       } catch (e) {
+        console.error(`[Create Room] Error: ${e.message}`);
         res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
       }
@@ -94,9 +100,12 @@ const server = http.createServer((req, res) => {
         const roomId = data.roomId?.toUpperCase();
         const playerId = data.playerId || generatePlayerId();
         
+        console.log(`[Join Room] RoomId: ${roomId}, PlayerId: ${playerId}`);
+        
         const room = rooms.get(roomId);
         
         if (!room) {
+          console.log(`[Join Room] Room not found: ${roomId}. Active rooms: ${Array.from(rooms.keys()).join(', ')}`);
           res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Room not found' }));
           return;
@@ -104,6 +113,7 @@ const server = http.createServer((req, res) => {
         
         // 如果已经是房主
         if (room.hostId === playerId) {
+          console.log(`[Join Room] Player is already host. RoomId: ${roomId}`);
           res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
@@ -117,6 +127,7 @@ const server = http.createServer((req, res) => {
         
         // 如果已经是客人
         if (room.guestId === playerId) {
+          console.log(`[Join Room] Player is already guest. RoomId: ${roomId}`);
           res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
@@ -130,6 +141,7 @@ const server = http.createServer((req, res) => {
         
         // 新玩家加入
         if (room.guestId) {
+          console.log(`[Join Room] Room is full. RoomId: ${roomId}, Host: ${room.hostId}, Guest: ${room.guestId}`);
           res.writeHead(403, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Room is full' }));
           return;
@@ -138,6 +150,8 @@ const server = http.createServer((req, res) => {
         const guestRole = room.hostRole === 'dragon' ? 'tiger' : 'dragon';
         room.guestId = playerId;
         room.guestRole = guestRole;
+        
+        console.log(`[Join Room] Success. RoomId: ${roomId}, New Guest: ${playerId}, Role: ${guestRole}`);
         
         res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -148,6 +162,7 @@ const server = http.createServer((req, res) => {
           opponentConnected: true,
         }));
       } catch (e) {
+        console.error(`[Join Room] Error: ${e.message}`);
         res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
       }
@@ -160,9 +175,12 @@ const server = http.createServer((req, res) => {
     const roomId = url.searchParams.get('roomId')?.toUpperCase();
     const playerId = url.searchParams.get('playerId');
     
+    console.log(`[Room Status] RoomId: ${roomId}, PlayerId: ${playerId}`);
+    
     const room = rooms.get(roomId);
     
     if (!room) {
+      console.log(`[Room Status] Room not found: ${roomId}. Active rooms: ${Array.from(rooms.keys()).join(', ')}`);
       res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: 'Room not found' }));
       return;
@@ -170,6 +188,8 @@ const server = http.createServer((req, res) => {
     
     const isHost = room.hostId === playerId;
     const opponentConnected = isHost ? !!room.guestId : !!room.hostId;
+    
+    console.log(`[Room Status] Room found. Host: ${room.hostId}, Guest: ${room.guestId}, OpponentConnected: ${opponentConnected}`);
     
     res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -260,19 +280,25 @@ wss.on('connection', (ws, req) => {
   const roomId = url.searchParams.get('room')?.toUpperCase();
   const playerId = url.searchParams.get('playerId');
 
+  console.log(`[WS Connect] RoomId: ${roomId}, PlayerId: ${playerId}`);
+
   if (!roomId || !playerId) {
+    console.log(`[WS Connect] Missing parameters. Closing connection.`);
     ws.close();
     return;
   }
 
   const room = rooms.get(roomId);
   if (!room) {
+    console.log(`[WS Connect] Room not found: ${roomId}. Active rooms: ${Array.from(rooms.keys()).join(', ')}`);
     ws.close();
     return;
   }
 
   const clientKey = `${roomId}:${playerId}`;
   clients.set(clientKey, ws);
+  
+  console.log(`[WS Connect] Success. ClientKey: ${clientKey}. Total clients: ${clients.size}`);
 
   // 辅助函数：获取对手的 WebSocket
   const getOpponentWs = () => {
@@ -287,6 +313,7 @@ wss.on('connection', (ws, req) => {
   // 通知对方玩家已连接
   const opponentWs = getOpponentWs();
   if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+    console.log(`[WS Connect] Notifying opponent of connection`);
     opponentWs.send(JSON.stringify({ type: 'opponent-connected' }));
     ws.send(JSON.stringify({ type: 'opponent-connected' }));
   }
@@ -295,54 +322,85 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
+      console.log(`[WS Message] Type: ${message.type}, RoomId: ${roomId}, PlayerId: ${playerId}`);
       
       if (message.type === 'game-update') {
         // 更新房间游戏状态
         const currentRoom = rooms.get(roomId);
-        if (!currentRoom) return;
+        if (!currentRoom) {
+          console.log(`[WS Message] Room not found: ${roomId}`);
+          return;
+        }
         
         currentRoom.gameState = message.gameState;
+        console.log(`[WS Message] Game state updated`);
 
         // 转发给对手
         const opponentWs = getOpponentWs();
         if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+          console.log(`[WS Message] Forwarding to opponent`);
           opponentWs.send(JSON.stringify({
             type: 'game-update',
             gameState: message.gameState,
           }));
+        } else {
+          console.log(`[WS Message] Opponent not available for forwarding`);
         }
       }
     } catch (e) {
-      console.error('Invalid message from client:', e.message);
+      console.error(`[WS Message] Error: ${e.message}`);
     }
   });
 
   // 处理连接关闭
   ws.on('close', () => {
     clients.delete(clientKey);
+    console.log(`[WS Close] Client disconnected. ClientKey: ${clientKey}. Remaining clients: ${clients.size}`);
 
     // 通知对手
     const opponentWs = getOpponentWs();
     if (opponentWs && opponentWs.readyState === WebSocket.OPEN) {
+      console.log(`[WS Close] Notifying opponent of disconnection`);
       opponentWs.send(JSON.stringify({ type: 'opponent-disconnected' }));
     }
   });
 
   // 处理错误
   ws.on('error', (err) => {
-    console.error('WebSocket error:', err);
+    console.error(`[WS Error] ${err.message}`);
   });
 });
 
 // 清理过期房间（每10分钟）
 setInterval(() => {
   const now = Date.now();
+  let cleanedCount = 0;
+  
   for (const [roomId, room] of rooms) {
     if (now - room.createdAt > 30 * 60 * 1000) { // 30分钟过期
       rooms.delete(roomId);
+      cleanedCount++;
+      console.log(`[Room Cleanup] Deleted expired room: ${roomId}`);
     }
   }
+  
+  if (cleanedCount > 0) {
+    console.log(`[Room Cleanup] Cleaned ${cleanedCount} expired rooms. Total rooms: ${rooms.size}`);
+  }
 }, 10 * 60 * 1000);
+
+// 定期日志：每5分钟输出房间状态
+setInterval(() => {
+  console.log(`[Room Status] Total rooms: ${rooms.size}, Total clients: ${clients.size}`);
+  
+  if (rooms.size > 0) {
+    console.log(`[Room Status] Active rooms: ${Array.from(rooms.keys()).join(', ')}`);
+    
+    for (const [roomId, room] of rooms) {
+      console.log(`[Room Status] Room ${roomId}: Host=${room.hostId}, Guest=${room.guestId}, GameState=${room.gameState ? 'exists' : 'null'}`);
+    }
+  }
+}, 5 * 60 * 1000);
 
 const PORT = process.env.PORT || 3001;
 
